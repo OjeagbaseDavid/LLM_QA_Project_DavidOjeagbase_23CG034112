@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Grok Q&A — Clean UI</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="brand">Grok</div>
+      <div>
+        <div class="h1">Grok Question & Answer System</div>
+        <div style="color:var(--muted); font-size:13px; margin-top:4px;">
+          Ask anything — powered by Grok
+        </div>
+      </div>
+    </div>
+
+    <div class="card input-area">
+      <textarea id="question" placeholder="Type your question here...">who made grok</textarea>
+
+      <div class="controls">
+        <button id="askBtn" class="btn btn-primary">
+          <span id="btnText">Ask</span>
+          <span id="btnSpinner" style="display:none; margin-left:6px;"><span class="loader"></span></span>
+        </button>
+
+        <button id="clearBtn" class="btn btn-ghost">Clear</button>
+      </div>
+
+      <div class="output-grid">
+        <div class="output" id="processedBox" aria-live="polite">
+          <h3>Processed Question</h3>
+          <div class="meta" id="processedMeta">-</div>
+        </div>
+
+        <div class="output" id="answerBox" aria-live="polite">
+          <h3>Answer</h3>
+          <div id="answer">-</div>
+        </div>
+      </div>
+
+      <div class="note">Tip: click Ask and wait a second — responses may take 1–3s depending on the LLM.</div>
+    </div>
+  </div>
+
+<script>
+  // small helper: escape HTML to avoid rendering raw markup
+  function escapeHtml(unsafe) {
+    return unsafe
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  // remove common markdown bold/asterisks and control chars
+  function tidyAnswer(raw) {
+    if (!raw) return "";
+    // remove bold markers and stray emoji markers the LLM sometimes returns
+    let s = raw.replaceAll("**", "")
+               .replaceAll("**", "")
+               .replaceAll("`", "")
+               .replaceAll(/\r/g, "")
+               .trim();
+    // collapse long whitespace
+    s = s.replace(/\s{2,}/g, " ");
+    return s;
+  }
+
+  const askBtn = document.getElementById("askBtn");
+  const btnText = document.getElementById("btnText");
+  const btnSpinner = document.getElementById("btnSpinner");
+  const qInput = document.getElementById("question");
+  const processedMeta = document.getElementById("processedMeta");
+  const answerDiv = document.getElementById("answer");
+  const clearBtn = document.getElementById("clearBtn");
+
+  async function askQuestion() {
+    const q = qInput.value.trim();
+    if (!q) return;
+    // ui: loading
+    askBtn.disabled = true;
+    btnText.style.opacity = "0.6";
+    btnSpinner.style.display = "inline-block";
+
+    // show processed question immediately
+    const processed = q.toLowerCase().replace(/[\t\n\r]+/g," ").replace(/[^0-9a-zA-Z\s\?]/g,"").replace(/\s+/g," ");
+    processedMeta.innerText = processed;
+
+    try {
+      const res = await fetch("/ask", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ question: q })
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        answerDiv.innerText = "Server error: " + (txt || res.statusText);
+      } else {
+        const data = await res.json();
+        // server already returns processed and answer, but we do final tidy/escape
+        const out = data.answer || "";
+        const tidy = tidyAnswer(out);
+        answerDiv.innerHTML = escapeHtml(tidy);
+      }
+    } catch (err) {
+      answerDiv.innerText = "Network error: " + (err.message || err);
+    } finally {
+      askBtn.disabled = false;
+      btnText.style.opacity = "1";
+      btnSpinner.style.display = "none";
+    }
+  }
+
+  askBtn.addEventListener("click", askQuestion);
+  clearBtn.addEventListener("click", () => {
+    qInput.value = "";
+    processedMeta.innerText = "-";
+    answerDiv.innerText = "-";
+    qInput.focus();
+  });
+
+  // optional: allow Enter+Ctrl to submit
+  qInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      askQuestion();
+    }
+  });
+</script>
+</body>
+</html>
